@@ -8,12 +8,12 @@ import pandas as pd
 # we'll have to come up with a strategy for filtering out people's all-caps shit-posting
 def filter_for_stocks(c):
     i = 0
-    tickers = []
+    stocks = []
     while i < len(c):
         if c[i].islower() and not c[i] == '.':
             i = i + 1
         else:
-            ticker = ''
+            stock = ''
             valid = True
             for j in range(i, min(i+5, len(c))):
                 if c[j].islower() or not c[j].isalpha():
@@ -21,12 +21,12 @@ def filter_for_stocks(c):
                     valid = False
                     break
                 else:
-                    ticker = ticker + c[j]
-            if len(ticker) >= 3:
-                tickers.append(ticker)
+                    stock = stock + c[j]
+            if len(stock) >= 3 and not blacklisted_stocks(stock):
+                stocks.append(stock)
             if valid:
-                i = i + len(ticker)
-    return tickers
+                i = i + len(stock)
+    return stocks
 
 
 # Pulls reddit data and sorts through it
@@ -37,8 +37,8 @@ def reddit_scrape():
                          username='reddit_api_account',
                          password='cashmoney')
 
-    subreddit = reddit.subreddit('wallstreetbets')
-
+    # subreddits_to_scrape = ['CanadianInvestor', 'PersonalFinanceCanada']
+    subreddits_to_scrape = ['wallstreetbets', 'stocks', 'personalfinance', 'investing']
     comments_dict = {"author": [],
                      "body": [],
                      "score": [],
@@ -48,43 +48,64 @@ def reddit_scrape():
                      "submission_rank": [],
                      "mentions_stocks": [],
                      "created": []}
-    count = 0
-    rank = 1
-    for submission in subreddit.hot(limit=3):
-        post = reddit.submission(submission.id)
-        print('submission: ', submission.title)
-        comments = post.comments
-        print('comments retrieved')
-        comments.replace_more(1)
-        print('comments expanded')
-        for c in comments.list():
-            has_stocks_mentioned = False
-            if count >= 100:
-                break
-            count = count + 1
+    stocks_mentioned = []
 
-            tickers = filter_for_stocks(c.body)
-            if len(tickers):
-                print(tickers)
-                has_stocks_mentioned = True
-
-            comments_dict["author"].append(c.author)
-            comments_dict["body"].append(c.body)
-            comments_dict["score"].append(c.score)
-            comments_dict["permalink"].append(c.permalink)
-            comments_dict["created"].append(c.created_utc)
-            comments_dict["submission_id"].append(submission.id)
-            comments_dict["submission_title"].append(submission.title)
-            comments_dict["submission_rank"].append(str(rank))
-            if has_stocks_mentioned:
-                comments_dict["mentions_stocks"].append("Yes")
-            else:
-                comments_dict["mentions_stocks"].append("No")
-
+    for sub_name in subreddits_to_scrape:
+        subreddit = reddit.subreddit(sub_name)
         count = 0
-        rank = rank + 1
+        rank = 1
+        for submission in subreddit.hot(limit=5):
+            post = reddit.submission(submission.id)
+            print('submission: ', submission.title)
+            comments = post.comments
+            print('comments retrieved')
+            comments.replace_more(1)
+            print('comments expanded')
+            for c in comments.list():
+                has_stocks_mentioned = False
+                if count >= 100:
+                    break
+                count = count + 1
+
+                stocks = filter_for_stocks(c.body)
+                if len(stocks):
+                    # print(stocks)
+                    stocks_mentioned = stocks_mentioned + stocks
+                    has_stocks_mentioned = True
+
+                comments_dict["author"].append(c.author)
+                comments_dict["body"].append(c.body)
+                comments_dict["score"].append(c.score)
+                comments_dict["permalink"].append(c.permalink)
+                comments_dict["created"].append(c.created_utc)
+                comments_dict["submission_id"].append(submission.id)
+                comments_dict["submission_title"].append(submission.title)
+                comments_dict["submission_rank"].append(str(rank))
+                if has_stocks_mentioned:
+                    comments_dict["mentions_stocks"].append("Yes")
+                else:
+                    comments_dict["mentions_stocks"].append("No")
+
+            count = 0
+            rank = rank + 1
 
     comments_data = pd.DataFrame(comments_dict)
+    stocks_seen = []
+    stock_counts = []
+    for s in stocks_mentioned:
+        if stocks_seen.count(s) == 0:
+            stocks_seen.append(s)
+            stock_counts.append(stocks_mentioned.count(s))
+    for i in range(len(stocks_seen)):
+        if stock_counts[i] > 10:
+            print(stocks_seen[i] + ' was seen ' + str(stock_counts[i]) + ' times')
+
+
+def blacklisted_stocks(stock):
+    blacklist = ['ETF', 'IPO', 'YOLO', 'THE', 'EDIT', 'EOW', 'WSB', 'STEM', 'CERB', 'CRA', 'TFSA', 'TSX', 'IRA', 'IRS', 'HOA', 'CCP']
+    if blacklist.count(stock):
+        return True
+    return False
 
 
 reddit_scrape()
